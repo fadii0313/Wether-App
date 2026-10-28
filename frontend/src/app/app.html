@@ -1,0 +1,459 @@
+<div class="app-layout" [attr.data-theme]="weatherTheme()">
+  <!-- Ambient background glow elements -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <!-- Header Navigation -->
+  <header class="studio-header">
+    <div class="brand-group">
+      <div class="logo-mark">
+        <app-weather-icon [icon]="weather()?.current?.icon || 'clear-day'" size="sm"></app-weather-icon>
+      </div>
+      <div class="brand-text">
+        <div class="brand-title">ATMOSPHERE</div>
+        <div class="brand-subtitle">
+          <span class="live-dot"></span>
+          Weather Studio &bull; .NET 10 + Angular
+        </div>
+      </div>
+    </div>
+
+    <!-- Search Bar with Autocomplete -->
+    <div class="search-box-wrapper">
+      <div class="search-input-container">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+
+        <input
+          type="text"
+          class="search-input"
+          placeholder="Search city, capital, or location..."
+          [ngModel]="searchQuery()"
+          (ngModelChange)="onSearchChange($event)"
+          (keydown.enter)="onSearchSubmit()"
+        />
+
+        @if (isSearching()) {
+          <div class="search-spinner"></div>
+        }
+
+        <button 
+          class="geo-btn" 
+          title="Detect Current Location" 
+          (click)="useCurrentLocation()"
+          type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Autocomplete Dropdown -->
+      @if (showSuggestions() && citySuggestions().length > 0) {
+        <div class="suggestions-dropdown">
+          @for (city of citySuggestions(); track city.latitude + '_' + city.longitude) {
+            <button class="suggestion-item" (click)="selectSuggestion(city)" type="button">
+              <div class="suggestion-info">
+                <span class="city-name">{{ city.name }}</span>
+                <span class="city-meta">
+                  {{ city.state ? city.state + ', ' : '' }}{{ city.country }}
+                </span>
+              </div>
+              <span class="suggestion-coords">
+                {{ city.latitude | number:'1.2-2' }}°, {{ city.longitude | number:'1.2-2' }}°
+              </span>
+            </button>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Header Actions -->
+    <div class="header-actions">
+      <!-- Temperature Toggle Button -->
+      <div class="unit-toggle" (click)="toggleTempUnit()" title="Toggle Celsius / Fahrenheit">
+        <span class="unit-pill" [class.active]="tempUnit() === 'C'">°C</span>
+        <span class="unit-pill" [class.active]="tempUnit() === 'F'">°F</span>
+      </div>
+
+      <!-- Refresh Button -->
+      <button 
+        class="icon-action-btn" 
+        title="Refresh Weather"
+        [class.spinning]="isLoading()"
+        (click)="fetchWeather(weather()?.current?.cityName || 'London')"
+        type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 4v6h-6"></path>
+          <path d="M1 20v-6h6"></path>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Quick Cities & Favorites Bar -->
+  <div class="quick-cities-bar">
+    <div class="quick-label">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mini-icon">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+      </svg>
+      FAVORITES
+    </div>
+
+    <div class="quick-chips-scroller">
+      @for (fav of favorites(); track fav) {
+        <div 
+          class="city-chip" 
+          [class.active]="weather()?.current?.cityName?.toLowerCase() === fav.toLowerCase()"
+          (click)="fetchWeather(fav)">
+          <span>{{ fav }}</span>
+          <button class="chip-remove" (click)="removeFavorite(fav, $event)" title="Remove from favorites">
+            &times;
+          </button>
+        </div>
+      }
+
+      <span class="chip-divider"></span>
+
+      @for (quick of quickPills; track quick) {
+        @if (!favorites().includes(quick)) {
+          <button 
+            class="city-chip chip-secondary" 
+            [class.active]="weather()?.current?.cityName?.toLowerCase() === quick.toLowerCase()"
+            (click)="fetchWeather(quick)"
+            type="button">
+            {{ quick }}
+          </button>
+        }
+      }
+    </div>
+  </div>
+
+  <!-- Error Alert Banner -->
+  @if (errorMessage()) {
+    <div class="error-banner">
+      <div class="error-content">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <span>{{ errorMessage() }}</span>
+      </div>
+      <button class="retry-btn" (click)="fetchWeather(weather()?.current?.cityName || 'London')">
+        Retry
+      </button>
+    </div>
+  }
+
+  <!-- Loading State (Glass Skeletons) -->
+  @if (isLoading()) {
+    <main class="dashboard-grid">
+      <div class="glass-card hero-skeleton shimmer"></div>
+      <div class="metrics-grid">
+        <div class="glass-card metric-skeleton shimmer"></div>
+        <div class="glass-card metric-skeleton shimmer"></div>
+        <div class="glass-card metric-skeleton shimmer"></div>
+        <div class="glass-card metric-skeleton shimmer"></div>
+        <div class="glass-card metric-skeleton shimmer"></div>
+        <div class="glass-card metric-skeleton shimmer"></div>
+      </div>
+      <div class="glass-card timeline-skeleton shimmer"></div>
+      <div class="glass-card forecast-skeleton shimmer"></div>
+    </main>
+  } @else if (weather()) {
+    <!-- Main Weather Dashboard -->
+    <main class="dashboard-grid">
+      <!-- 1. Hero Showcase Card -->
+      <section class="glass-card hero-card">
+        <div class="hero-main">
+          <div class="hero-header">
+            <div class="location-badge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="loc-pin">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                <circle cx="12" cy="10" r="3"></circle>
+              </svg>
+              <h1 class="city-heading">{{ weather()!.current.cityName }}</h1>
+              @if (weather()!.current.country) {
+                <span class="country-pill">{{ weather()!.current.country }}</span>
+              }
+            </div>
+
+            <button 
+              class="fav-toggle-btn" 
+              [class.is-fav]="isCurrentFavorite()"
+              (click)="toggleFavorite()"
+              title="Save to favorites">
+              <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+              </svg>
+            </button>
+          </div>
+
+          <div class="condition-row">
+            <span class="condition-badge">{{ weather()!.current.condition }}</span>
+            <span class="time-meta">Updated {{ weather()!.current.updatedAtUtc | date:'shortTime' }}</span>
+          </div>
+
+          <div class="temperature-block">
+            <div class="temp-number">
+              {{ tempUnit() === 'C' ? weather()!.current.temperatureC : weather()!.current.temperatureF }}
+              <span class="temp-unit">°{{ tempUnit() }}</span>
+            </div>
+
+            <div class="temp-details">
+              <div class="feels-like">
+                Feels like 
+                <strong>
+                  {{ tempUnit() === 'C' ? weather()!.current.feelsLikeC : weather()!.current.feelsLikeF }}°{{ tempUnit() }}
+                </strong>
+              </div>
+              <div class="temp-range">
+                <span class="high">
+                  &uarr; {{ tempUnit() === 'C' ? weather()!.current.maxTempC : (weather()!.current.maxTempC * 9 / 5 + 32 | number:'1.0-0') }}°
+                </span>
+                <span class="low">
+                  &darr; {{ tempUnit() === 'C' ? weather()!.current.minTempC : (weather()!.current.minTempC * 9 / 5 + 32 | number:'1.0-0') }}°
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero-visual">
+          <app-weather-icon [icon]="weather()!.current.icon" size="xl"></app-weather-icon>
+        </div>
+      </section>
+
+      <!-- 2. Metrics Grid -->
+      <section class="metrics-grid">
+        <!-- Wind -->
+        <div class="glass-card metric-card">
+          <div class="metric-header">
+            <span class="metric-title">WIND &amp; GUSTS</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="metric-icon">
+              <path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"></path>
+            </svg>
+          </div>
+          <div class="metric-value">
+            {{ tempUnit() === 'C' ? weather()!.current.windSpeedKmh : weather()!.current.windSpeedMph }}
+            <span class="metric-unit">{{ tempUnit() === 'C' ? 'km/h' : 'mph' }}</span>
+          </div>
+          <div class="metric-sub">
+            <span class="compass-pill">{{ weather()!.current.windDirectionCompass }}</span>
+            <span>{{ weather()!.current.windDirectionDegrees }}° azimuth</span>
+          </div>
+        </div>
+
+        <!-- Humidity -->
+        <div class="glass-card metric-card">
+          <div class="metric-header">
+            <span class="metric-title">HUMIDITY</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="metric-icon">
+              <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
+            </svg>
+          </div>
+          <div class="metric-value">
+            {{ weather()!.current.humidity }}<span class="metric-unit">%</span>
+          </div>
+          <div class="bar-container">
+            <div class="bar-fill" [style.width.%]="weather()!.current.humidity"></div>
+          </div>
+          <div class="metric-sub">
+            <span>{{ weather()!.current.humidity > 65 ? 'High Moisture' : weather()!.current.humidity < 35 ? 'Dry Air' : 'Comfortable' }}</span>
+          </div>
+        </div>
+
+        <!-- UV Index -->
+        <div class="glass-card metric-card">
+          <div class="metric-header">
+            <span class="metric-title">UV INDEX</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="metric-icon">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+            </svg>
+          </div>
+          <div class="metric-value">
+            {{ weather()!.current.uvIndex }}
+          </div>
+          <div class="metric-sub">
+            <span class="uv-badge" [class.uv-low]="weather()!.current.uvIndex < 3" [class.uv-mod]="weather()!.current.uvIndex >= 3 && weather()!.current.uvIndex < 7" [class.uv-high]="weather()!.current.uvIndex >= 7">
+              {{ weather()!.current.uvIndex < 3 ? 'Low' : weather()!.current.uvIndex < 7 ? 'Moderate' : 'High Protection Needed' }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Air Quality -->
+        <div class="glass-card metric-card">
+          <div class="metric-header">
+            <span class="metric-title">AIR QUALITY (AQI)</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="metric-icon">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>
+          </div>
+          <div class="metric-value">
+            {{ weather()!.current.airQualityIndex }}
+          </div>
+          <div class="metric-sub">
+            <span class="aqi-badge">{{ weather()!.current.airQualityLabel }}</span>
+          </div>
+        </div>
+
+        <!-- Barometer -->
+        <div class="glass-card metric-card">
+          <div class="metric-header">
+            <span class="metric-title">PRESSURE</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="metric-icon">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </div>
+          <div class="metric-value">
+            {{ weather()!.current.pressureHpa }}
+            <span class="metric-unit">hPa</span>
+          </div>
+          <div class="metric-sub">
+            <span>{{ weather()!.current.pressureHpa >= 1013 ? 'Steady High Pressure' : 'Low Pressure System' }}</span>
+          </div>
+        </div>
+
+        <!-- Sun Cycle -->
+        <div class="glass-card metric-card">
+          <div class="metric-header">
+            <span class="metric-title">SUN CYCLE</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="metric-icon">
+              <path d="M17 18a5 5 0 0 0-10 0"></path>
+              <line x1="12" y1="2" x2="12" y2="9"></line>
+              <line x1="4.22" y1="10.22" x2="5.64" y2="11.64"></line>
+              <line x1="1" y1="18" x2="3" y2="18"></line>
+              <line x1="21" y1="18" x2="23" y2="18"></line>
+            </svg>
+          </div>
+          <div class="sun-times-row">
+            <div class="sun-item">
+              <span class="sun-label">Sunrise</span>
+              <span class="sun-time">{{ weather()!.current.sunrise }}</span>
+            </div>
+            <div class="sun-divider">&bull;</div>
+            <div class="sun-item">
+              <span class="sun-label">Sunset</span>
+              <span class="sun-time">{{ weather()!.current.sunset }}</span>
+            </div>
+          </div>
+          <div class="metric-sub">
+            <span>{{ weather()!.current.isDay ? 'Currently Daylight' : 'Night Hours' }}</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Hourly Forecast Timeline (24 Hours) -->
+      <section class="glass-card hourly-section">
+        <div class="section-header">
+          <div class="section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="section-icon">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            HOURLY TIMELINE &bull; NEXT 24 HOURS
+          </div>
+          <span class="hourly-hint">Scroll horizontally &rarr;</span>
+        </div>
+
+        <div class="hourly-scroller">
+          @for (hour of weather()!.hourly; track hour.time; let idx = $index) {
+            <div class="hourly-card" [class.current-hour]="idx === 0">
+              <span class="hour-time">{{ idx === 0 ? 'Now' : hour.formattedTime }}</span>
+              <div class="hour-icon">
+                <app-weather-icon [icon]="hour.icon" size="sm"></app-weather-icon>
+              </div>
+              <span class="hour-temp">
+                {{ tempUnit() === 'C' ? hour.temperatureC : hour.temperatureF }}°
+              </span>
+              @if (hour.precipitationProbability > 0) {
+                <span class="hour-precip" title="Precipitation Probability">
+                  <svg viewBox="0 0 24 24" fill="currentColor" class="rain-drop-icon">
+                    <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
+                  </svg>
+                  {{ hour.precipitationProbability }}%
+                </span>
+              } @else {
+                <span class="hour-precip-zero">&minus;</span>
+              }
+            </div>
+          }
+        </div>
+      </section>
+
+      <!-- 4. 7-Day Extended Forecast -->
+      <section class="glass-card forecast-section">
+        <div class="section-header">
+          <div class="section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="section-icon">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="16" y1="2" x2="16" y2="6"></line>
+              <line x1="8" y1="2" x2="8" y2="6"></line>
+              <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+            7-DAY EXTENDED FORECAST
+          </div>
+        </div>
+
+        <div class="daily-list">
+          @for (day of weather()!.daily; track day.date; let idx = $index) {
+            <div class="daily-row" [class.is-today]="idx === 0">
+              <div class="day-col">
+                <span class="day-name">{{ day.dayOfWeek }}</span>
+                <span class="day-date">{{ day.formattedDate }}</span>
+              </div>
+
+              <div class="condition-col">
+                <app-weather-icon [icon]="day.icon" size="sm"></app-weather-icon>
+                <span class="daily-condition-text">{{ day.condition }}</span>
+              </div>
+
+              <div class="precip-col">
+                @if (day.precipitationProbability > 10) {
+                  <span class="precip-pill">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
+                    </svg>
+                    {{ day.precipitationProbability }}%
+                  </span>
+                }
+              </div>
+
+              <div class="temp-bar-col">
+                <span class="temp-min">{{ tempUnit() === 'C' ? day.tempMinC : day.tempMinF }}°</span>
+                <div class="temp-visual-track">
+                  <div class="temp-visual-fill"></div>
+                </div>
+                <span class="temp-max">{{ tempUnit() === 'C' ? day.tempMaxC : day.tempMaxF }}°</span>
+              </div>
+            </div>
+          }
+        </div>
+      </section>
+    </main>
+  }
+
+  <!-- Footer -->
+  <footer class="studio-footer">
+    <div class="footer-badges">
+      <span class="tech-badge">Backend: .NET 10 Web API</span>
+      <span class="tech-badge">Frontend: Angular 22 Standalone</span>
+      <span class="tech-badge">Live Open-Meteo &bull; Cached &bull; Resilient</span>
+    </div>
+    <p class="footer-copy">Atmosphere Studio &bull; Precision Weather Intelligence</p>
+  </footer>
+</div>
